@@ -1,9 +1,14 @@
+#include <bmpfile.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
+void maptofile(char *map[], int, int, char*);
+rgb_pixel_t getcolor(int, int);
 void badinput_exit(char*);
-void print_help(char*);
+void printhelp(char*);
+int randint(int, int);
 
 int main(int argc, char **argv) {
     if(argc == 1) {
@@ -39,7 +44,7 @@ int main(int argc, char **argv) {
                 badinput_exit(argv[0]);
             }
         } else if(strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0) {
-            print_help(argv[0]);
+            printhelp(argv[0]);
             return 0;
         } else if(argv[i][0] == '-') {
             printf("Bad argument: %s\n", argv[i]);
@@ -64,7 +69,63 @@ int main(int argc, char **argv) {
            "Output File: %s\n",
            size, steps, waterlevel, filename); //for debugging
 
+    /*
+     * The actual terrain generation code starts here
+     */
+
+    char map[size][size]; //char to keep it small since its only storing 0-255
+    int j;
+    for(i = 0; i < size; i++) //fill the map with zeroes to start
+        for(j = 0; j < size; j++)
+            map[i][j] = 0;
+
+    /* TODO */
+    /* Add random seed option to arguments */
+    srand(time(NULL)); //seed the random generator
+
+    int x = randint(0, size - 1); //x and y are current location in the random walk
+    int y = randint(0, size - 1);
+    for(i = 0; i < steps; i++) {
+       x += randint(-1, 1);
+       y += randint(-1, 1); //move, or not
+       x = x % size;
+       y = y % size; //prevent walking off map by wrapping around
+       map[x][y]++; //increment
+       if(map[x][y] > 255) map[x][y] = 255; //add a ceiling
+    }
+
+    /*
+     * This section is saving the map to a file
+     */
+
+    bmpfile_t *bmp;
+    bmp = bmp_create(size, size, 24);
+
+    for(x = 0; x < size; x++) {
+        for(y = 0; y < size; y++) {
+            bmp_set_pixel(bmp, x, y, getcolor(map[x][y], waterlevel));
+        }
+    }
+
+    bmp_save(bmp, filename);
+    bmp_destroy(bmp);
+
     return 0;
+}
+
+/*
+ * Returns what color a certain height should be
+ */
+rgb_pixel_t getcolor(int h, int waterlevel) {
+    if(h <= waterlevel)
+        return (rgb_pixel_t){255, (h * 255) / waterlevel, 0, 0}; //this makes a lighter blue as it gets shallower
+    if(h > waterlevel)
+        return (rgb_pixel_t){0, (h * 255) / (256 - waterlevel), 0, 0}; //darker green the closer it is to water
+    if(h == 300)
+        return (rgb_pixel_t){0x33, 0xCC, 0xFF, 0}; //beach color for tiles flagged as beaches
+    if(h > 301)
+        return (rgb_pixel_t){0, ((h - 301) * 255) / (256 - waterlevel), 255, 0}; //orange for tree tiles
+    return (rgb_pixel_t){0, 0, 255, 0}; //bright red if other, because that means something bad happened
 }
 
 void badinput_exit(char *name) {
@@ -72,7 +133,7 @@ void badinput_exit(char *name) {
     exit(1);
 }
 
-void print_help(char *name) {
+void printhelp(char *name) {
     printf("Usage: %s [OPTIONS] OUTPUT-FILE\n", name);
     printf("Randomly generates some terrain and saves a bitmap to OUTPUT-FILE\n"
            "By Brik Royster (minikori)\n"
@@ -84,4 +145,12 @@ void print_help(char *name) {
            "\t\tThe number of steps to take in the random walk (Default = 61 * size^2). Must be positive.\n"
            "  -w, --waterlevel"
            "\tThe waterlevel of the random terrain (Default = 50). Must be between 0 and 255 inclusive.\n");
+}
+
+/*
+ * Returns a random number between min and max inclusive
+ * Logic taken from http://c-faq.com/lib/randrange.html
+ */
+int randint(int min, int max) {
+    return min + rand() / (RAND_MAX / (max - min + 1) + 1);
 }
