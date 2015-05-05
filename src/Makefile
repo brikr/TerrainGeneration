@@ -2,12 +2,12 @@ CC = gcc
 LDFLAGS = -L$(HOME)/apps/libbmp/lib
 CFLAGS = -g -Wall -I$(HOME)/apps/libbmp/include
 LIBS = -lbmp
-BINS = bitmap_test
+BINS = bitmaptest
 
 all: $(BINS)
 
-bitmap_test: bitmap_test.c
-	$(CC) $(CFLAGS) $(LDFLAGS) $(LIBS) -o bitmap_test bitmap_test.c
+bitmaptest: bitmaptest.c
+	$(CC) $(CFLAGS) $(LDFLAGS) $(LIBS) -o bitmaptest bitmaptest.c
 
 clean:
 	$(RM) $(BINS) *.bmp
