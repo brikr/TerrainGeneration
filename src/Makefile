@@ -1,11 +1,16 @@
 CC = gcc
-CFLAGS = -g -Wall
-TARGET = bitmap_test
+CFLAGS = -g -Wall -Iinclude
+LDFLAGS = -Llib
+LIBS = -lbmp
+BINS = bitmap_noktec bitmap_test
 
-all: $(TARGET)
+all: $(BINS)
 
-$(TARGET): $(TARGET).c
-	$(CC) $(CFLAGS) -o $(TARGET) $(TARGET).c
+bitmap_noktec: bitmap_noktec.c
+	$(CC) $(CFLAGS) $(LDFLAGS) $(LIBS) -o bitmap_noktec bitmap_noktec.c
+
+bitmap_test: bitmap_test.c
+	$(CC) $(CFLAGS) $(LDFLAGS) $(LIBS) -o bitmap_test bitmap_test.c
 
 clean:
-	$(RM) $(TARGET)
+	$(RM) $(BINS) *.bmp
