@@ -88,8 +88,10 @@ int main(int argc, char **argv) {
     for(i = 0; i < steps; i++) {
        x += randint(-1, 1);
        y += randint(-1, 1); //move, or not
-       x = x % size;
-       y = y % size; //prevent walking off map by wrapping around
+       if(x == size) x = 0;
+       if(y == size) y = 0;
+       if(x == -1) x = size - 1;
+       if(y == -1) y = size - 1;//prevent walking off map by adding wrap-around
        map[x][y]++; //increment
        if(map[x][y] > 255) map[x][y] = 255; //add a ceiling
     }
