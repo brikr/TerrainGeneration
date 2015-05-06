@@ -4,7 +4,16 @@
 #include <string.h>
 #include <time.h>
 
-rgb_pixel_t getcolor(int, int);
+struct tile {
+    unsigned char elevation; //the elevation at this tile
+    unsigned char id; //an identifier to the tile type
+    //possible tile types: 0 = normal ground, 1 = beach, 2 = tree
+};
+typedef struct tile tile;
+
+void smooth(int w, int h, tile map[w][h], int, int);
+void maptofile(int w, int h, tile map[w][h], int, char*);
+rgb_pixel_t getcolor(tile, int);
 void badinput_exit(char*);
 void printhelp(char*);
 int randint(int, int);
@@ -20,7 +29,7 @@ int main(int argc, char **argv) {
     int height = 0;
     int steps = 0;
     int waterlevel = 0;
-    unsigned int seed;
+    unsigned int seed = 0;
 
     /* TODO */
     /* Rewrite this code using getopt() and getopt_long() */
@@ -83,25 +92,20 @@ int main(int argc, char **argv) {
            "Height: %d\n"
            "Steps: %d\n"
            "Waterlevel: %d\n"
+           "Seed: %d\n"
            "Output File: %s\n",
-           width, height, steps, waterlevel, filename); //for debugging
+           width, height, steps, waterlevel, seed, filename); //for debugging
 
     /*
      * The actual terrain generation code starts here
      */
 
-    struct tile {
-        unsigned char elevation; //the elevation at this tile
-        unsigned char id; //an identifier to the tile type
-        //possible tile types: 0 = normal ground, 1 = beach, 2 = tree
-    };
-    typedef struct tile tile;
-    
-    char map[width][height];
+    tile map[width][height];
     int j;
     for(i = 0; i < width; i++) //fill the map with zeroes to start
         for(j = 0; j < height; j++)
-            map[i][j] = 0;
+            map[i][j].elevation = 0;
+            map[i][j].id = 0;
 
     /* TODO */
     /* Add random seed option to arguments */
@@ -117,16 +121,97 @@ int main(int argc, char **argv) {
        if(x == -1) x = width - 1;
        if(y == -1) y = height - 1;//prevent walking off map by adding wrap-around
        //printf("Current location: %d,%d\n", x, y);
-       map[x][y]++; //increment
-       if(map[x][y] > 255) map[x][y] = 255; //add a ceiling
+       map[x][y].elevation++; //increment
+       if(map[x][y].elevation > 255) map[x][y].elevation = 255; //add a ceiling
     }
 
-    /*
-     * This section is saving the map to a file
-     */
+    smooth(width, height, map, waterlevel, 2); //smooth out the terrain
+
+    maptofile(width, height, map, waterlevel, filename);
+
+    return 0;
+}
+
+/*
+ * Smooths the terrain
+ * This code was modified from the Java code in a few ways:
+ *  It no longer takes in a threshold, but rather a number of passes to execute the smoothing algorithm
+ *   The map looks silly with anything other than 4 threshold so thats hardcoded now
+ *   A higher numpasses results in smoother terrain.
+ *  It is now called smooth, rather than cleanUp
+ */
+void smooth(int width, int height, tile map[width][height], int waterlevel, int numpasses) {
+    if(numpasses == 0) return;
+    int threshold = 4; //originally an argument, but anything other than 4 looks funny.
+    int i, j, u, count;
+    unsigned char newmap[width][height]; //this map is here so that we aren't smoothing the map in-place
+    for(i = 0; i < width; i++) {
+        for(j = 0; j < height; j++) {
+            newmap[i][j] = map[i][j].elevation;
+        }
+    }
+    int borders[8][2]; //borders[neighbor][x/y]
+    /* TODO */
+    /* Search for a better way to get all of the borders around a tile */
+    for(i = 0; i < width; i++) {
+        for(j = 0; j < height; j++) {
+
+            borders[0][0] = i - 1;  //upper left x
+            borders[0][1] = j - 1;  //upper left y
+            borders[1][0] = i;      //upper x
+            borders[1][1] = j;      //upper y
+            borders[2][0] = i + 1;  //upper right x
+            borders[2][1] = j - 1;  //upper right y
+            borders[3][0] = i - 1;  //left x
+            borders[3][1] = j;      //left y
+            borders[4][0] = i + 1;  //right x
+            borders[4][1] = j;      //right y
+            borders[5][0] = i - 1;  //lower left x
+            borders[5][1] = j + 1;  //lower left y
+            borders[6][0] = i;      //lower x
+            borders[6][1] = j + 1;  //lower y
+            borders[7][0] = i + 1;  //lower right x
+            borders[7][1] = j + 1;  //lower right y
+
+            for(u = 0; u < 8; u++) { //wrap around any out of bounds issues
+                if(borders[u][0] < 0) borders[u][0] = width - 1;
+                if(borders[u][0] == width) borders[u][0] = 0;
+                if(borders[u][1] < 0) borders[u][1] = height - 1;
+                if(borders[u][1] == height) borders[u][1] = 0;
+            }
+
+            count = 0;
+            if(map[i][j].elevation <= waterlevel) {
+                //get a count of nonwater tiles around this tile
+                for(u = 0; u < 8; u++) {
+                    if(map[borders[u][0]][borders[u][1]].elevation > waterlevel) count++;
+                }
+                //if its more than the threshold it makes this tile nonwater
+                if(count > threshold) newmap[i][j] = waterlevel + 2;
+            } else { //pretty much the same algorithm here but reversed
+                for(u = 0; u < 8; u++) {
+                    if(map[borders[u][0]][borders[u][1]].elevation <= waterlevel) count++;
+                }
+                if(count > threshold) newmap[i][j] = waterlevel - 1;
+            }
+        }
+    }
+    for(i = 0; i < width; i++) { //replace all elevations at once
+        for(j = 0; j < height; j++) {
+            map[i][j].elevation = newmap[i][j];
+        }
+    }
+    smooth(width, height, map, waterlevel, numpasses - 1);
+}
+
+/*
+ * Save a map to a bitmap file
+ */
+void maptofile(int width, int height, tile map[width][height], int waterlevel, char *filename) {
     bmpfile_t *bmp;
     bmp = bmp_create(width, height, 24);
 
+    int i, j;
     for(i = 0; i < width; i++) {
         for(j = 0; j < height; j++) {
             bmp_set_pixel(bmp, i, j, getcolor(map[i][j], waterlevel));
@@ -135,22 +220,22 @@ int main(int argc, char **argv) {
 
     bmp_save(bmp, filename);
     bmp_destroy(bmp);
-
-    return 0;
 }
 
 /*
  * Returns what color a certain height should be
  */
-rgb_pixel_t getcolor(int h, int waterlevel) {
-    if(h <= waterlevel)
-        return (rgb_pixel_t){255, (h * 255) / waterlevel, 0, 0}; //this makes a lighter blue as it gets shallower
-    if(h > waterlevel)
-        return (rgb_pixel_t){0, (h * 255) / (256 - waterlevel), 0, 0}; //darker green the closer it is to water
-    if(h == 300)
+rgb_pixel_t getcolor(tile t, int waterlevel) {
+    if(t.elevation <= waterlevel)
+        return (rgb_pixel_t){255, (t.elevation * 255) / waterlevel, 0, 0}; //this makes a lighter blue as it gets shallower
+    if(t.elevation > waterlevel)
+        return (rgb_pixel_t){0, (t.elevation * 255) / (256 - waterlevel), 0, 0}; //darker green the closer it is to water
+    if(t.id == 1)
         return (rgb_pixel_t){0x33, 0xCC, 0xFF, 0}; //beach color for tiles flagged as beaches
-    if(h > 301)
-        return (rgb_pixel_t){0, ((h - 301) * 255) / (256 - waterlevel), 255, 0}; //orange for tree tiles
+    if(t.id == 2)
+        /* TODO */
+        /* implement a tree density variable to change tree color for */
+        return (rgb_pixel_t){0, 0xA5, 0xFF, 0}; //orange for tree tiles
     return (rgb_pixel_t){0, 0, 255, 0}; //bright red if other, because that means something bad happened
 }
 
