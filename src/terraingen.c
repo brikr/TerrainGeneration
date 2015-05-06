@@ -28,9 +28,10 @@ int main(int argc, char **argv) {
     char *filename;
     int width = 0;
     int height = 0;
-    int steps = 0;
+    long steps = 0;
     int waterlevel = 0;
     unsigned int seed = 0;
+    int nsmooth = 0;
 
     /* TODO */
     /* Rewrite this code using getopt() and getopt_long() */
@@ -67,6 +68,12 @@ int main(int argc, char **argv) {
                 printf("Invalid seed value. Seed must be positive.\n");
                 badinput_exit(argv[0]);
             }
+        } else if(strcmp(argv[i], "-m") == 0 || strcmp(argv[i], "--smooth") == 0) {
+            nsmooth = atoi(argv[i + 1]);
+            if(nsmooth < 0) {
+                printf("Invalid smooth value. Number of smooth passes must be positive.\n");
+                badinput_exit(argv[0]);
+            }
         } else if(strcmp(argv[i], "--help") == 0) {
             printhelp(argv[0]);
             return 0;
@@ -88,10 +95,11 @@ int main(int argc, char **argv) {
     if(steps == 0) steps = 61 * width * height; //this just seems to make the prettiest maps
     if(waterlevel == 0) waterlevel = 50;
     if(seed == 0) seed = time(NULL);
+    if(nsmooth == 0) nsmooth = 20;
 
     printf("Width: %d\n"
            "Height: %d\n"
-           "Steps: %d\n"
+           "Steps: %lu\n"
            "Waterlevel: %d\n"
            "Seed: %d\n"
            "Output File: %s\n",
@@ -116,7 +124,8 @@ int main(int argc, char **argv) {
 
     int x = randint(0, width - 1); //x and y are current location in the random walk
     int y = randint(0, height - 1);
-    for(i = 0; i < steps; i++) {
+    long l;
+    for(l = 0; l < steps; l++) {
        x += randint(-1, 1);
        y += randint(-1, 1); //move, or not
        if(x == width) x = 0;
@@ -127,7 +136,7 @@ int main(int argc, char **argv) {
        if(map[x][y].elevation > 255) map[x][y].elevation = 255; //add a ceiling
     }
 
-    smooth(width, height, map, waterlevel, 2); //smooth out the terrain
+    smooth(width, height, map, waterlevel, nsmooth); //smooth out the terrain
     genbeaches(width, height, map, waterlevel);
 
     maptofile(width, height, map, waterlevel, filename);
@@ -144,66 +153,69 @@ int main(int argc, char **argv) {
  *  It is now called smooth, rather than cleanUp
  */
 void smooth(int width, int height, tile map[width][height], int waterlevel, int numpasses) {
-    if(numpasses == 0) return;
-    int threshold = 4; //originally an argument, but anything other than 4 looks funny.
-    int i, j, u, count;
-    unsigned char newmap[width][height]; //this map is here so that we aren't smoothing the map in-place
-    for(i = 0; i < width; i++) {
-        for(j = 0; j < height; j++) {
-            newmap[i][j] = map[i][j].elevation;
-        }
-    }
-    int borders[8][2]; //borders[neighbor][x/y]
-    /* TODO */
-    /* Search for a better way to get all of the borders around a tile */
-    for(i = 0; i < width; i++) {
-        for(j = 0; j < height; j++) {
-            borders[0][0] = i - 1;  //upper left x
-            borders[0][1] = j - 1;  //upper left y
-            borders[1][0] = i;      //upper x
-            borders[1][1] = j;      //upper y
-            borders[2][0] = i + 1;  //upper right x
-            borders[2][1] = j - 1;  //upper right y
-            borders[3][0] = i - 1;  //left x
-            borders[3][1] = j;      //left y
-            borders[4][0] = i + 1;  //right x
-            borders[4][1] = j;      //right y
-            borders[5][0] = i - 1;  //lower left x
-            borders[5][1] = j + 1;  //lower left y
-            borders[6][0] = i;      //lower x
-            borders[6][1] = j + 1;  //lower y
-            borders[7][0] = i + 1;  //lower right x
-            borders[7][1] = j + 1;  //lower right y
-
-            for(u = 0; u < 8; u++) { //wrap around any out of bounds issues
-                if(borders[u][0] < 0) borders[u][0] = width - 1;
-                if(borders[u][0] == width) borders[u][0] = 0;
-                if(borders[u][1] < 0) borders[u][1] = height - 1;
-                if(borders[u][1] == height) borders[u][1] = 0;
-            }
-
-            count = 0;
-            if(map[i][j].elevation <= waterlevel) {
-                //get a count of nonwater tiles around this tile
-                for(u = 0; u < 8; u++) {
-                    if(map[borders[u][0]][borders[u][1]].elevation > waterlevel) count++;
-                }
-                //if its more than the threshold it makes this tile nonwater
-                if(count > threshold) newmap[i][j] = waterlevel + 2;
-            } else { //pretty much the same algorithm here but reversed
-                for(u = 0; u < 8; u++) {
-                    if(map[borders[u][0]][borders[u][1]].elevation <= waterlevel) count++;
-                }
-                if(count > threshold) newmap[i][j] = waterlevel - 1;
+    int v;
+    for(v = 0; v < numpasses; v++) {
+        printf("\rSmoothing... %.1f%%", (float)(v + 1) * 100 / (float)numpasses);
+        int threshold = 4; //originally an argument, but anything other than 4 looks funny.
+        int i, j, u, count;
+        unsigned char newmap[width][height]; //this map is here so that we aren't smoothing the map in-place
+        for(i = 0; i < width; i++) {
+            for(j = 0; j < height; j++) {
+                newmap[i][j] = map[i][j].elevation;
             }
         }
-    }
-    for(i = 0; i < width; i++) { //replace all elevations at once
-        for(j = 0; j < height; j++) {
-            map[i][j].elevation = newmap[i][j];
+        int borders[8][2]; //borders[neighbor][x/y]
+        /* TODO */
+        /* Search for a better way to get all of the borders around a tile */
+        for(i = 0; i < width; i++) {
+            for(j = 0; j < height; j++) {
+                borders[0][0] = i - 1;  //upper left x
+                borders[0][1] = j - 1;  //upper left y
+                borders[1][0] = i;      //upper x
+                borders[1][1] = j - 1;  //upper y
+                borders[2][0] = i + 1;  //upper right x
+                borders[2][1] = j - 1;  //upper right y
+                borders[3][0] = i - 1;  //left x
+                borders[3][1] = j;      //left y
+                borders[4][0] = i + 1;  //right x
+                borders[4][1] = j;      //right y
+                borders[5][0] = i - 1;  //lower left x
+                borders[5][1] = j + 1;  //lower left y
+                borders[6][0] = i;      //lower x
+                borders[6][1] = j + 1;  //lower y
+                borders[7][0] = i + 1;  //lower right x
+                borders[7][1] = j + 1;  //lower right y
+
+                for(u = 0; u < 8; u++) { //wrap around any out of bounds issues
+                    if(borders[u][0] < 0) borders[u][0] = width - 1;
+                    if(borders[u][0] == width) borders[u][0] = 0;
+                    if(borders[u][1] < 0) borders[u][1] = height - 1;
+                    if(borders[u][1] == height) borders[u][1] = 0;
+                }
+
+                count = 0;
+                if(map[i][j].elevation <= waterlevel) {
+                    //get a count of nonwater tiles around this tile
+                    for(u = 0; u < 8; u++) {
+                        if(map[borders[u][0]][borders[u][1]].elevation > waterlevel) count++;
+                    }
+                    //if its more than the threshold it makes this tile nonwater
+                    if(count > threshold) newmap[i][j] = waterlevel + 2;
+                } else { //pretty much the same algorithm here but reversed
+                    for(u = 0; u < 8; u++) {
+                        if(map[borders[u][0]][borders[u][1]].elevation <= waterlevel) count++;
+                    }
+                    if(count > threshold) newmap[i][j] = waterlevel - 1;
+                }
+            }
+        }
+        for(i = 0; i < width; i++) { //replace all elevations at once
+            for(j = 0; j < height; j++) {
+                map[i][j].elevation = newmap[i][j];
+            }
         }
     }
-    smooth(width, height, map, waterlevel, numpasses - 1);
+    printf("\n");
 }
 
 /*
@@ -221,7 +233,7 @@ void genbeaches(int width, int height, tile map[width][height], int waterlevel) 
             borders[0][0] = i - 1;  //upper left x
             borders[0][1] = j - 1;  //upper left y
             borders[1][0] = i;      //upper x
-            borders[1][1] = j;      //upper y
+            borders[1][1] = j - 1;  //upper y
             borders[2][0] = i + 1;  //upper right x
             borders[2][1] = j - 1;  //upper right y
             borders[3][0] = i - 1;  //left x
@@ -244,11 +256,11 @@ void genbeaches(int width, int height, tile map[width][height], int waterlevel) 
 
             if(map[borders[1][0]][borders[1][1]].elevation <= waterlevel && map[i][j].elevation > waterlevel)
                 map[i][j].id = 1;
-            else if(map[borders[3][0]][borders[3][1]].elevation <= waterlevel && map[i][j].elevation > waterlevel)
+            if(map[borders[3][0]][borders[3][1]].elevation <= waterlevel && map[i][j].elevation > waterlevel)
                 map[i][j].id = 1;
-            else if(map[borders[4][0]][borders[4][1]].elevation <= waterlevel && map[i][j].elevation > waterlevel)
+            if(map[borders[4][0]][borders[4][1]].elevation <= waterlevel && map[i][j].elevation > waterlevel)
                 map[i][j].id = 1;
-            else if(map[borders[6][0]][borders[6][1]].elevation <= waterlevel && map[i][j].elevation > waterlevel)
+            if(map[borders[6][0]][borders[6][1]].elevation <= waterlevel && map[i][j].elevation > waterlevel)
                 map[i][j].id = 1;
         }
     }
@@ -308,9 +320,11 @@ void printhelp(char *name) {
            "  -s, --steps"
            "\t\tThe number of steps to take in the random walk (Default = 61 * size^2). Must be positive.\n"
            "  -l, --waterlevel"
-           "\t\tThe number of steps to take in the random walk (Default = 61 * size^2). Must be positive.\n"
+           "\t\tThe waterlevel in the map (Default = 50). Must be between 0 and 255 inclusive.\n"
            "  -r, --seed"
-           "\tThe random seed to use in terrain generation (Default = current system time). Must be positive.\n");
+           "\t\tThe random seed to use in terrain generation (Default = current system time). Must be positive.\n"
+           "  -m, --smooth"
+           "\t\tThe number of times to apply the smoothing algorithm (Default = 20). Higher values will affect the map less.\n");
 }
 
 /*
